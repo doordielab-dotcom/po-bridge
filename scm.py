@@ -5,8 +5,9 @@ from supabase import create_client, Client
 
 # --- 1. 설정 ---
 # (대표님의 실제 키값으로 유지하세요!)
-SUPABASE_URL = "https://znziamdnzuboxqtsstwa.supabase.co"
-SUPABASE_KEY = "sb_secret_ObqhLN-U8CIvfxwWyBvCuA_4-iG7sze"
+# Streamlit Secrets(금고)에서 키를 가져옵니다.
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
 @st.cache_resource
 def init_supabase():
