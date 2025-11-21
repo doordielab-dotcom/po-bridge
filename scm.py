@@ -240,6 +240,9 @@ else:
             # [핵심 수정] header=1 옵션으로 첫 줄(제목) 무시하고 두 번째 줄부터 읽기
             df = pd.read_excel(uploaded_file, header=1)
             
+            # [추가] 컬럼명 공백 제거 (예: " 제조사 " -> "제조사")
+            df.columns = df.columns.str.strip()
+            
             # [핵심 수정] '구매거래처'가 비어있는 행(Total 행 등) 제거
             if '구매거래처' in df.columns:
                 df = df.dropna(subset=['구매거래처'])
@@ -312,6 +315,8 @@ else:
                 "created_at": None, # 생성일 숨김
                 "file_url": None, # 파일 URL 숨김
                 "file_name": None, # 파일명 숨김
+                "item_code": None, # [추가] item_code 숨김
+                "품목코드": None, # [추가] 품목코드 숨김
                 "supplier_name": "공급사",
                 "po_number": "발주번호",
                 "item_name": "품명",
