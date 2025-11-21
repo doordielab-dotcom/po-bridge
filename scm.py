@@ -164,7 +164,7 @@ else:
     st.set_page_config(page_title="PO-브릿지 Pro", page_icon="🌉", layout="wide")
     inject_custom_css()
     
-    # --- 로그인 화면 (세션에 유저 없으면 표시) ---
+    # --- 로그인 화면 ---
     if not st.session_state['user']:
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
@@ -178,7 +178,6 @@ else:
                 
                 tab1, tab2 = st.tabs(["로그인", "회원가입"])
                 
-                # [핵심 수정] key를 추가하여 입력값 유지
                 with tab1:
                     email = st.text_input("이메일", key="login_email")
                     password = st.text_input("비밀번호", type="password", key="login_pw")
@@ -204,7 +203,7 @@ else:
                                 st.error(f"가입 실패: {e}")
         st.stop()
 
-    # --- 메인 대시보드 (로그인 성공 후) ---
+    # --- 메인 대시보드 ---
     user_email = st.session_state['user'].email
     user_id = st.session_state['user'].id
     
@@ -217,7 +216,7 @@ else:
 
     st.title("Dashboard")
     
-    # 내 데이터만 조회 (RLS 역할)
+    # 내 데이터 조회
     res = supabase.table("purchase_orders").select("*").eq("user_id", user_id).execute()
     df_res = pd.DataFrame(res.data) if res.data else pd.DataFrame()
     
@@ -238,28 +237,24 @@ else:
     with st.expander("📤 신규 발주 엑셀 업로드 (Click)", expanded=False):
         uploaded_file = st.file_uploader("ERP 엑셀 업로드 (.xlsx)", type=['xlsx', 'xls'])
         if uploaded_file:
-            df = pd.read_excel(uploaded_file)
+            # [핵심 수정] header=1 옵션으로 첫 줄(제목) 무시하고 두 번째 줄부터 읽기
+            df = pd.read_excel(uploaded_file, header=1)
+            
+            # [핵심 수정] '구매거래처'가 비어있는 행(Total 행 등) 제거
+            if '구매거래처' in df.columns:
+                df = df.dropna(subset=['구매거래처'])
+            
+            st.write("👇 데이터 미리보기 (상위 3개)")
             st.dataframe(df.head(3))
             
             if st.button("DB 저장 & 링크 생성", type="primary"):
-                # ERP 엑셀 컬럼 매핑 로직 (유연하게 처리)
-                grouped = df.groupby(df.columns[7]) if len(df.columns) > 8 else df.groupby('구매거래처') 
-                # Tip: 실제로는 컬럼명으로 하는게 안전하지만, ERP 양식이 복잡할 땐 위치나 가능한 이름으로 찾음
-                # 여기서는 사용자가 올린 파일에 '구매거래처' 컬럼이 있다고 가정하거나, 없으면 로직 수정 필요.
-                # 안전하게 '구매거래처' 컬럼이 있다고 가정합니다. (없으면 에러남 -> 컬럼명 확인 필요)
-                
                 try:
-                    # 실제 ERP 컬럼명에 맞춰 수정 (대표님이 주신 표 기준)
-                    # G:발주번호, H:구매거래처, O:품명, C:LotNo, N:규격, R:금회납품수량
-                    # 엑셀을 읽을 때 pandas는 첫 줄을 헤더로 씁니다.
-                    
-                    grouped = df.groupby('구매거래처') # H열 이름
+                    grouped = df.groupby('구매거래처')
                     count = 0
                     for supplier, group in grouped:
                         token = secrets.token_urlsafe(16)
                         batch = []
                         for _, row in group.iterrows():
-                            # NaN값 처리
                             row = row.fillna('')
                             batch.append({
                                 "user_id": user_id,
@@ -279,13 +274,12 @@ else:
                     time.sleep(1)
                     st.rerun()
                 except KeyError as e:
-                    st.error(f"엑셀 컬럼명을 찾을 수 없습니다: {e}. 엑셀 헤더가 '구매거래처', '발주번호' 등으로 되어있는지 확인하세요.")
+                    st.error(f"엑셀 컬럼명을 찾을 수 없습니다: {e}. '구매거래처', '발주번호' 컬럼이 있는지 확인하세요.")
 
     # Data Table Section
     st.subheader("발주 및 링크 현황")
     
     if not df_res.empty:
-        # 상태 필터
         col_filter, _ = st.columns([1, 3])
         with col_filter:
             status_filter = st.selectbox("상태 보기", ["전체", "제출완료", "미제출"])
@@ -297,11 +291,9 @@ else:
         else:
             df_display = df_res
             
-        # 링크 생성 (대표님 앱 주소 적용)
         base_url = "https://po-bridge-wlmv3rkpgybe6d5u42ekvr.streamlit.app"
         df_display['link'] = df_display['access_token'].apply(lambda x: f"{base_url}/?access_token={x}")
         
-        # 보여줄 컬럼만 선택
         st.data_editor(
             df_display[['supplier_name', 'po_number', 'item_name', 'status', 'link']],
             column_config={
