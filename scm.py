@@ -244,8 +244,12 @@ else:
             if '구매거래처' in df.columns:
                 df = df.dropna(subset=['구매거래처'])
             
+            # [추가] 품목코드 숨김 처리
+            cols_to_hide = ['item_code', '품목코드']
+            df_preview = df.drop(columns=[c for c in cols_to_hide if c in df.columns])
+            
             st.write("👇 데이터 미리보기 (상위 3개)")
-            st.dataframe(df.head(3))
+            st.dataframe(df_preview.head(3))
             
             if st.button("DB 저장 & 링크 생성", type="primary"):
                 try:
@@ -264,6 +268,7 @@ else:
                                 "lot_no": str(row.get('LotNo', '')),
                                 "quantity": str(row.get('금회납품수량', '')),
                                 "spec": str(row.get('규격', '')),
+                                "manufacturer": str(row.get('제조사', '')), # [추가] 제조사 매핑
                                 "status": "PENDING_UPLOAD",
                                 "access_token": token
                             })
@@ -313,6 +318,7 @@ else:
                 "lot_no": "Lot No",
                 "quantity": "수량",
                 "spec": "규격",
+                "manufacturer": "제조사", # [추가] 제조사 표시
                 "status": st.column_config.SelectboxColumn("상태", options=["PENDING_UPLOAD", "DONE"]),
                 "link": st.column_config.LinkColumn("공급사 전달용 링크", display_text="🔗 링크 복사")
             },
