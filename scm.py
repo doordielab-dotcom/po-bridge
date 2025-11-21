@@ -294,17 +294,53 @@ else:
         base_url = "https://po-bridge-wlmv3rkpgybe6d5u42ekvr.streamlit.app"
         df_display['link'] = df_display['access_token'].apply(lambda x: f"{base_url}/?access_token={x}")
         
-        st.data_editor(
-            df_display[['supplier_name', 'po_number', 'item_name', 'status', 'link']],
+        # [수정] 편집 가능한 데이터 에디터 설정
+        # ID를 포함하여 데이터프레임 준비 (ID는 숨김)
+        df_editor = df_display.copy()
+        
+        changes = st.data_editor(
+            df_editor,
             column_config={
+                "id": None, # ID 숨김
+                "user_id": None, # 사용자 ID 숨김
+                "access_token": None, # 토큰 숨김
+                "created_at": None, # 생성일 숨김
+                "file_url": None, # 파일 URL 숨김
+                "file_name": None, # 파일명 숨김
                 "supplier_name": "공급사",
                 "po_number": "발주번호",
                 "item_name": "품명",
+                "lot_no": "Lot No",
+                "quantity": "수량",
+                "spec": "규격",
                 "status": st.column_config.SelectboxColumn("상태", options=["PENDING_UPLOAD", "DONE"]),
                 "link": st.column_config.LinkColumn("공급사 전달용 링크", display_text="🔗 링크 복사")
             },
             use_container_width=True,
-            hide_index=True
+            hide_index=True,
+            num_rows="dynamic", # 행 추가/삭제 허용
+            key="data_editor"
         )
+
+        # 변경사항 저장 버튼
+        if st.button("💾 변경사항 저장", type="primary"):
+            try:
+                # 1. 삭제된 행 처리
+                for index in changes['deleted_rows']:
+                    # 원본 데이터프레임에서 해당 인덱스의 ID를 찾음
+                    # 주의: Streamlit의 deleted_rows 인덱스는 편집 전 원본 데이터프레임 기준
+                    row_id = df_editor.iloc[index]['id']
+                    supabase.table("purchase_orders").delete().eq("id", row_id).execute()
+
+                # 2. 수정된 행 처리
+                for index, updates in changes['edited_rows'].items():
+                    row_id = df_editor.iloc[index]['id']
+                    supabase.table("purchase_orders").update(updates).eq("id", row_id).execute()
+                
+                st.success("✅ 변경사항이 저장되었습니다!")
+                time.sleep(1)
+                st.rerun()
+            except Exception as e:
+                st.error(f"저장 중 오류 발생: {e}")
     else:
         st.info("등록된 발주 내역이 없습니다. 위에서 엑셀을 업로드해주세요.")
