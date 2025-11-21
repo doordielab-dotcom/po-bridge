@@ -4,12 +4,12 @@ import secrets
 from supabase import create_client, Client
 import time
 
-# --- 1. 설정 ---
+# --- 1. Supabase 설정 ---
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 except:
-    st.error("Secrets 설정 오류")
+    st.error("Secrets 설정 오류: Streamlit 대시보드에서 Supabase 키를 설정해주세요.")
     st.stop()
 
 @st.cache_resource
@@ -18,7 +18,7 @@ def init_supabase():
 
 supabase = init_supabase()
 
-# --- CSS 주입 (Design System) ---
+# --- 2. 디자인 시스템 (CSS 주입) ---
 def inject_custom_css():
     st.markdown("""
     <style>
@@ -49,24 +49,13 @@ def inject_custom_css():
              box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
         }
 
-        /* Headers */
-        h1, h2, h3 {
-            color: var(--secondary);
-            font-weight: 700;
-            letter-spacing: -0.025em;
-        }
-
         /* Buttons */
         .stButton > button {
             border-radius: 8px;
             font-weight: 600;
             transition: all 0.2s;
         }
-        .stButton > button:hover {
-            transform: translateY(-1px);
-        }
         
-        /* Primary Button Override */
         div[data-testid="stButton"] > button[kind="primary"] {
             background-color: var(--primary);
             border-color: var(--primary);
@@ -93,21 +82,10 @@ def inject_custom_css():
             background-color: #f1f5f9;
             color: #475569;
         }
-        
-        /* Metrics */
-        div[data-testid="stMetric"] {
-            background-color: var(--card-bg);
-            padding: 1rem;
-            border-radius: 8px;
-            border: 1px solid #e2e8f0;
-            box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-        }
     </style>
     """, unsafe_allow_html=True)
 
-inject_custom_css()
-
-# --- 2. 라우팅 및 세션 관리 ---
+# --- 3. 라우팅 및 세션 관리 ---
 if 'user' not in st.session_state:
     st.session_state['user'] = None
 
@@ -121,7 +99,7 @@ if access_token:
     st.set_page_config(page_title="공급사 문서 제출", page_icon="🏭", layout="centered")
     inject_custom_css()
     
-    # 토큰 검증 및 데이터 조회
+    # 토큰 검증
     response = supabase.table("purchase_orders").select("*").eq("access_token", access_token).order("id").execute()
     
     if not response.data:
@@ -130,7 +108,7 @@ if access_token:
     
     supplier_name = response.data[0]['supplier_name']
     
-    # Header Section
+    # Header
     with st.container():
         st.markdown(f"""
         <div style="text-align: center; margin-bottom: 2rem;">
@@ -166,17 +144,18 @@ if access_token:
             
             with col2:
                 if item['status'] == 'DONE':
-                    st.markdown('<div style="text-align: right; color: var(--success);">✅ 저장됨</div>', unsafe_allow_html=True)
+                    st.markdown('<div style="text-align: right; color: var(--success); font-weight:bold;">✅ 저장됨</div>', unsafe_allow_html=True)
                 else:
                     uploaded_file = st.file_uploader("파일 업로드", key=f"up_{item['id']}", label_visibility="collapsed")
                     if uploaded_file:
                         if st.button("제출하기", key=f"btn_{item['id']}", type="primary", use_container_width=True):
-                            file_path = f"{supplier_name}/{item['lot_no']}_{uploaded_file.name}"
-                            supabase.storage.from_("files").upload(file_path, uploaded_file.read(), file_options={"upsert": "true"})
-                            supabase.table("purchase_orders").update({
-                                "status": "DONE", "file_url": file_path, "file_name": uploaded_file.name
-                            }).eq("id", item['id']).execute()
-                            st.rerun()
+                            with st.spinner("전송 중..."):
+                                file_path = f"{supplier_name}/{item['lot_no']}_{uploaded_file.name}"
+                                supabase.storage.from_("files").upload(file_path, uploaded_file.read(), file_options={"upsert": "true"})
+                                supabase.table("purchase_orders").update({
+                                    "status": "DONE", "file_url": file_path, "file_name": uploaded_file.name
+                                }).eq("id", item['id']).execute()
+                                st.rerun()
 
 # ==========================================
 # [시나리오 B] 🧑‍💼 구매자 (로그인 필수!)
@@ -199,26 +178,30 @@ else:
                 
                 tab1, tab2 = st.tabs(["로그인", "회원가입"])
                 
+                # [핵심 수정] key를 추가하여 입력값 유지
                 with tab1:
-                    email = st.text_input("이메일")
-                    password = st.text_input("비밀번호", type="password")
+                    email = st.text_input("이메일", key="login_email")
+                    password = st.text_input("비밀번호", type="password", key="login_pw")
                     if st.button("로그인하기", type="primary", use_container_width=True):
                         try:
                             res = supabase.auth.sign_in_with_password({"email": email, "password": password})
                             st.session_state['user'] = res.user
                             st.rerun()
                         except Exception as e:
-                            st.error(f"로그인 실패: {e}")
+                            st.error("로그인 실패: 이메일/비밀번호를 확인하세요.")
 
                 with tab2:
-                    new_email = st.text_input("가입할 이메일")
-                    new_password = st.text_input("설정할 비밀번호", type="password")
+                    new_email = st.text_input("가입할 이메일", key="signup_email")
+                    new_password = st.text_input("설정할 비밀번호", type="password", key="signup_pw")
                     if st.button("가입하기", use_container_width=True):
-                        try:
-                            res = supabase.auth.sign_up({"email": new_email, "password": new_password})
-                            st.success("가입 성공! 로그인해주세요.")
-                        except Exception as e:
-                            st.error(f"가입 실패: {e}")
+                        if not new_email or not new_password:
+                            st.warning("이메일과 비밀번호를 입력해주세요.")
+                        else:
+                            try:
+                                res = supabase.auth.sign_up({"email": new_email, "password": new_password})
+                                st.success("🎉 가입 성공! '로그인' 탭에서 로그인하세요.")
+                            except Exception as e:
+                                st.error(f"가입 실패: {e}")
         st.stop()
 
     # --- 메인 대시보드 (로그인 성공 후) ---
@@ -232,21 +215,16 @@ else:
             st.session_state['user'] = None
             st.rerun()
 
-    # Dashboard Header
     st.title("Dashboard")
     
-    # Metrics Section
-    # (실제 데이터 카운팅은 비용 문제로 생략하거나 캐싱해야 하지만, 여기서는 간단히 구현)
-    # 여기서는 UI 구조만 잡기 위해 placeholder 데이터 사용 가능하지만, 
-    # 기존 로직에 따라 데이터를 불러온 후 계산하는 것이 정확함.
-    
-    # 내 발주 목록 조회
+    # 내 데이터만 조회 (RLS 역할)
     res = supabase.table("purchase_orders").select("*").eq("user_id", user_id).execute()
     df_res = pd.DataFrame(res.data) if res.data else pd.DataFrame()
     
+    # Metrics
     m1, m2, m3 = st.columns(3)
     with m1:
-        st.metric("총 발주 건수", len(df_res) if not df_res.empty else 0)
+        st.metric("총 발주 품목", len(df_res) if not df_res.empty else 0)
     with m2:
         completed = len(df_res[df_res['status'] == 'DONE']) if not df_res.empty else 0
         st.metric("제출 완료", completed)
@@ -257,41 +235,60 @@ else:
     st.divider()
     
     # Upload Section
-    with st.expander("📤 신규 발주 업로드", expanded=False):
+    with st.expander("📤 신규 발주 엑셀 업로드 (Click)", expanded=False):
         uploaded_file = st.file_uploader("ERP 엑셀 업로드 (.xlsx)", type=['xlsx', 'xls'])
         if uploaded_file:
             df = pd.read_excel(uploaded_file)
+            st.dataframe(df.head(3))
+            
             if st.button("DB 저장 & 링크 생성", type="primary"):
-                grouped = df.groupby('구매거래처')
-                count = 0
-                for supplier, group in grouped:
-                    token = secrets.token_urlsafe(16)
-                    batch = []
-                    for _, row in group.iterrows():
-                        batch.append({
-                            "user_id": user_id,
-                            "po_number": str(row.get('발주번호', '')),
-                            "supplier_name": str(supplier),
-                            "item_name": str(row.get('품명', '')),
-                            "lot_no": str(row.get('LotNo', '')),
-                            "quantity": str(row.get('금회납품수량', '')),
-                            "spec": str(row.get('규격', '')),
-                            "status": "PENDING_UPLOAD",
-                            "access_token": token
-                        })
-                    supabase.table("purchase_orders").insert(batch).execute()
-                    count += 1
-                st.success(f"{count}개 공급사 링크 생성 완료!")
-                st.rerun()
+                # ERP 엑셀 컬럼 매핑 로직 (유연하게 처리)
+                grouped = df.groupby(df.columns[7]) if len(df.columns) > 8 else df.groupby('구매거래처') 
+                # Tip: 실제로는 컬럼명으로 하는게 안전하지만, ERP 양식이 복잡할 땐 위치나 가능한 이름으로 찾음
+                # 여기서는 사용자가 올린 파일에 '구매거래처' 컬럼이 있다고 가정하거나, 없으면 로직 수정 필요.
+                # 안전하게 '구매거래처' 컬럼이 있다고 가정합니다. (없으면 에러남 -> 컬럼명 확인 필요)
+                
+                try:
+                    # 실제 ERP 컬럼명에 맞춰 수정 (대표님이 주신 표 기준)
+                    # G:발주번호, H:구매거래처, O:품명, C:LotNo, N:규격, R:금회납품수량
+                    # 엑셀을 읽을 때 pandas는 첫 줄을 헤더로 씁니다.
+                    
+                    grouped = df.groupby('구매거래처') # H열 이름
+                    count = 0
+                    for supplier, group in grouped:
+                        token = secrets.token_urlsafe(16)
+                        batch = []
+                        for _, row in group.iterrows():
+                            # NaN값 처리
+                            row = row.fillna('')
+                            batch.append({
+                                "user_id": user_id,
+                                "po_number": str(row.get('발주번호', '')),
+                                "supplier_name": str(supplier),
+                                "item_name": str(row.get('품명', '')),
+                                "lot_no": str(row.get('LotNo', '')),
+                                "quantity": str(row.get('금회납품수량', '')),
+                                "spec": str(row.get('규격', '')),
+                                "status": "PENDING_UPLOAD",
+                                "access_token": token
+                            })
+                        if batch:
+                            supabase.table("purchase_orders").insert(batch).execute()
+                            count += 1
+                    st.success(f"✅ {count}개 공급사용 링크 생성 완료!")
+                    time.sleep(1)
+                    st.rerun()
+                except KeyError as e:
+                    st.error(f"엑셀 컬럼명을 찾을 수 없습니다: {e}. 엑셀 헤더가 '구매거래처', '발주번호' 등으로 되어있는지 확인하세요.")
 
     # Data Table Section
-    st.subheader("발주 현황")
+    st.subheader("발주 및 링크 현황")
     
     if not df_res.empty:
-        # Filter
-        col_filter, _ = st.columns([1, 2])
+        # 상태 필터
+        col_filter, _ = st.columns([1, 3])
         with col_filter:
-            status_filter = st.selectbox("상태 필터", ["전체", "제출완료", "미제출"])
+            status_filter = st.selectbox("상태 보기", ["전체", "제출완료", "미제출"])
         
         if status_filter == "제출완료":
             df_display = df_res[df_res['status'] == 'DONE']
@@ -300,21 +297,22 @@ else:
         else:
             df_display = df_res
             
-        # Link Generation
+        # 링크 생성 (대표님 앱 주소 적용)
         base_url = "https://po-bridge-wlmv3rkpgybe6d5u42ekvr.streamlit.app"
         df_display['link'] = df_display['access_token'].apply(lambda x: f"{base_url}/?access_token={x}")
         
-        # Display Columns
+        # 보여줄 컬럼만 선택
         st.data_editor(
-            df_display[['supplier_name', 'item_name', 'status', 'link']],
+            df_display[['supplier_name', 'po_number', 'item_name', 'status', 'link']],
             column_config={
                 "supplier_name": "공급사",
+                "po_number": "발주번호",
                 "item_name": "품명",
                 "status": st.column_config.SelectboxColumn("상태", options=["PENDING_UPLOAD", "DONE"]),
-                "link": st.column_config.LinkColumn("전송용 링크")
+                "link": st.column_config.LinkColumn("공급사 전달용 링크", display_text="🔗 링크 복사")
             },
             use_container_width=True,
             hide_index=True
         )
     else:
-        st.info("등록된 발주 내역이 없습니다.")
+        st.info("등록된 발주 내역이 없습니다. 위에서 엑셀을 업로드해주세요.")
